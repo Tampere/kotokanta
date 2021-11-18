@@ -1,0 +1,688 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "type": "string",
+            "metadata": "Data Factory name",
+            "defaultValue": "koto_datafactory_name"
+        },
+        "koto_connectionString": {
+            "type": "secureString",
+            "metadata": "Secure string for 'connectionString'"
+        },
+        "HttpServerKototietokanta_properties_typeProperties_url": {
+            "type": "string",
+            "defaultValue": "https://kototietokanta.stat.fi:443/PXWeb/api/v1/fi/Kototietokanta/"
+        }
+    },
+    "variables": {
+        "factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+    },
+    "resources": [
+        {
+            "name": "[concat(parameters('factoryName'), '/default')]",
+            "type": "Microsoft.DataFactory/factories/managedVirtualNetworks",
+            "apiVersion": "2018-06-01",
+            "properties": {},
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/koto_SQL_server_table')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "koto_database",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "destination_table_name": {
+                        "type": "string"
+                    },
+                    "destination_schema_name": {
+                        "type": "string"
+                    }
+                },
+                "folder": {
+                    "name": "KOTO"
+                },
+                "annotations": [],
+                "type": "AzureSqlTable",
+                "schema": [],
+                "typeProperties": {
+                    "schema": {
+                        "value": "@dataset().destination_schema_name",
+                        "type": "Expression"
+                    },
+                    "table": {
+                        "value": "@dataset().destination_table_name",
+                        "type": "Expression"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/koto_database')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/koto_httpsource')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "HttpServerKototietokanta",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "relative_URL": {
+                        "type": "string"
+                    }
+                },
+                "folder": {
+                    "name": "KOTO"
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "HttpServerLocation",
+                        "relativeUrl": {
+                            "value": "@dataset().relative_URL",
+                            "type": "Expression"
+                        }
+                    },
+                    "columnDelimiter": ",",
+                    "encodingName": "UTF-7",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": true,
+                    "quoteChar": "\""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/HttpServerKototietokanta')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/koto_SQL_server')]",
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "koto_database",
+                    "type": "LinkedServiceReference"
+                },
+                "folder": {
+                    "name": "KOTO"
+                },
+                "annotations": [],
+                "type": "AzureSqlTable",
+                "schema": [],
+                "typeProperties": {}
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/linkedServices/koto_database')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/HttpServerKototietokanta')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "HttpServer",
+                "typeProperties": {
+                    "url": "[parameters('HttpServerKototietokanta_properties_typeProperties_url')]",
+                    "enableServerCertificateValidation": true,
+                    "authenticationType": "Anonymous"
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/koto_database')]",
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "annotations": [],
+                "type": "AzureSqlDatabase",
+                "typeProperties": {
+                    "connectionString": "[parameters('koto_connectionString')]"
+                }
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/koto_haku')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "Get koto configurations ID",
+                        "type": "Lookup",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.00:10:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "AzureSqlSource",
+                                "sqlReaderQuery": "SELECT [id], destination_table_name, [order] FROM [dbo].[koto_config] WHERE active = 0x01\nORDER BY destination_table_name, [order]\n",
+                                "queryTimeout": "00:10:00",
+                                "isolationLevel": "ReadCommitted",
+                                "partitionOption": "None"
+                            },
+                            "dataset": {
+                                "referenceName": "koto_SQL_server",
+                                "type": "DatasetReference",
+                                "parameters": {}
+                            },
+                            "firstRowOnly": false
+                        }
+                    },
+                    {
+                        "name": "ForEach_queries",
+                        "type": "ForEach",
+                        "dependsOn": [
+                            {
+                                "activity": "Get koto configurations ID",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "items": {
+                                "value": "@activity('Get koto configurations ID').output.value",
+                                "type": "Expression"
+                            },
+                            "isSequential": true,
+                            "activities": [
+                                {
+                                    "name": "Execute koto request",
+                                    "type": "ExecutePipeline",
+                                    "dependsOn": [
+                                        {
+                                            "activity": "Get koto configuration",
+                                            "dependencyConditions": [
+                                                "Succeeded"
+                                            ]
+                                        }
+                                    ],
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "pipeline": {
+                                            "referenceName": "koto_data_request",
+                                            "type": "PipelineReference"
+                                        },
+                                        "waitOnCompletion": true,
+                                        "parameters": {
+                                            "destination_table_name": {
+                                                "value": "@activity('Get koto configuration').output.value[0].destination_table_name",
+                                                "type": "Expression"
+                                            },
+                                            "destination_schema_name": {
+                                                "value": "@activity('Get koto configuration').output.value[0].destination_schema_name",
+                                                "type": "Expression"
+                                            },
+                                            "relative_URL": {
+                                                "value": "@activity('Get koto configuration').output.value[0].relative_URL",
+                                                "type": "Expression"
+                                            },
+                                            "request_body": {
+                                                "value": "@activity('Get koto configuration').output.value[0].request_body",
+                                                "type": "Expression"
+                                            },
+                                            "drop_table": {
+                                                "value": "@activity('Get koto configuration').output.value[0].drop_table",
+                                                "type": "Expression"
+                                            },
+                                            "config_id": {
+                                                "value": "@item().id",
+                                                "type": "Expression"
+                                            }
+                                        }
+                                    }
+                                },
+                                {
+                                    "name": "Get koto configuration",
+                                    "type": "Lookup",
+                                    "dependsOn": [],
+                                    "policy": {
+                                        "timeout": "0.00:10:00",
+                                        "retry": 0,
+                                        "retryIntervalInSeconds": 30,
+                                        "secureOutput": false,
+                                        "secureInput": false
+                                    },
+                                    "userProperties": [],
+                                    "typeProperties": {
+                                        "source": {
+                                            "type": "AzureSqlSource",
+                                            "sqlReaderQuery": {
+                                                "value": "@concat('SELECT [id] ,[name]  ,[destination_schema_name]  ,[destination_table_name],[drop_table]  ,[relative_URL] ,[request_body] ,[active] ,[free] ,[version] ,[description] FROM [dbo].[koto_config] WHERE id=', item().id)",
+                                                "type": "Expression"
+                                            },
+                                            "queryTimeout": "00:10:00",
+                                            "isolationLevel": "ReadCommitted",
+                                            "partitionOption": "None"
+                                        },
+                                        "dataset": {
+                                            "referenceName": "koto_SQL_server",
+                                            "type": "DatasetReference",
+                                            "parameters": {}
+                                        },
+                                        "firstRowOnly": false
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "concurrency": 1,
+                "policy": {
+                    "elapsedTimeMetric": {},
+                    "cancelAfter": {}
+                },
+                "folder": {
+                    "name": "KOTO"
+                },
+                "annotations": [],
+                "lastPublishTime": "2021-11-09T07:54:05Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/koto_SQL_server')]",
+                "[concat(variables('factoryId'), '/pipelines/koto_data_request')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/integrationRuntime1')]",
+            "type": "Microsoft.DataFactory/factories/integrationRuntimes",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "type": "Managed",
+                "typeProperties": {
+                    "computeProperties": {
+                        "location": "West Europe",
+                        "dataFlowProperties": {
+                            "computeType": "General",
+                            "coreCount": 8,
+                            "timeToLive": 0
+                        }
+                    }
+                },
+                "managedVirtualNetwork": {
+                    "type": "ManagedVirtualNetworkReference",
+                    "referenceName": "default"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/managedVirtualNetworks/default')]"
+            ]
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/IPaasSelfhostedIR')]",
+            "type": "Microsoft.DataFactory/factories/integrationRuntimes",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "type": "SelfHosted",
+                "typeProperties": {}
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/IPaaSAzure')]",
+            "type": "Microsoft.DataFactory/factories/integrationRuntimes",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "type": "SelfHosted",
+                "typeProperties": {}
+            },
+            "dependsOn": []
+        },
+        {
+            "name": "[concat(parameters('factoryName'), '/koto_data_request')]",
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "koto_data_request",
+                        "type": "Copy",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "0.00:10:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [
+                            {
+                                "name": "Source",
+                                "value": "@{pipeline().parameters.relative_URL}"
+                            },
+                            {
+                                "name": "Destination",
+                                "value": "@{pipeline().parameters.destination_schema_name}.@{pipeline().parameters.destination_table_name}"
+                            }
+                        ],
+                        "typeProperties": {
+                            "source": {
+                                "type": "DelimitedTextSource",
+                                "storeSettings": {
+                                    "type": "HttpReadSettings",
+                                    "requestMethod": "POST",
+                                    "requestBody": {
+                                        "value": "@{pipeline().parameters.request_body}",
+                                        "type": "Expression"
+                                    },
+                                    "requestTimeout": ""
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextReadSettings",
+                                    "skipLineCount": 0
+                                }
+                            },
+                            "sink": {
+                                "type": "AzureSqlSink",
+                                "preCopyScript": {
+                                    "value": "@{if(pipeline().parameters.drop_table, \nconcat('DROP TABLE IF EXISTS [', pipeline().parameters.destination_schema_name,'].[', pipeline().parameters.destination_table_name, ']'),'')}",
+                                    "type": "Expression"
+                                },
+                                "tableOption": "autoCreate",
+                                "disableMetricsCollection": false
+                            },
+                            "enableStaging": false,
+                            "parallelCopies": 1,
+                            "enableSkipIncompatibleRow": false,
+                            "dataIntegrationUnits": 2,
+                            "translator": {
+                                "type": "TabularTranslator",
+                                "typeConversion": true,
+                                "typeConversionSettings": {
+                                    "allowDataTruncation": true,
+                                    "treatBooleanAsNumber": false
+                                }
+                            }
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "koto_httpsource",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "relative_URL": {
+                                        "value": "@pipeline().parameters.relative_URL",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "koto_SQL_server_table",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "destination_table_name": {
+                                        "value": "@pipeline().parameters.destination_table_name",
+                                        "type": "Expression"
+                                    },
+                                    "destination_schema_name": {
+                                        "value": "@pipeline().parameters.destination_schema_name",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "name": "Save result failed",
+                        "type": "SqlServerStoredProcedure",
+                        "dependsOn": [
+                            {
+                                "activity": "koto_data_request",
+                                "dependencyConditions": [
+                                    "Failed"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.00:10:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "storedProcedureName": "[[dbo].[sp_save_koto_loading_log]",
+                            "storedProcedureParameters": {
+                                "error": {
+                                    "value": {
+                                        "value": "@bool(1)",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Boolean"
+                                },
+                                "message": {
+                                    "value": {
+                                        "value": "@activity('koto_data_request').Error.Message",
+                                        "type": "Expression"
+                                    },
+                                    "type": "String"
+                                },
+                                "rowsCopied": {
+                                    "value": null,
+                                    "type": "Int32"
+                                },
+                                "rowsRead": {
+                                    "value": {
+                                        "value": "@activity('koto_data_request').output.rowsRead",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Int32"
+                                },
+                                "config_id": {
+                                    "value": {
+                                        "value": "@pipeline().parameters.config_id",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Int64"
+                                },
+                                "timestamp": {
+                                    "value": {
+                                        "value": "@utcnow()",
+                                        "type": "Expression"
+                                    },
+                                    "type": "DateTime"
+                                }
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "koto_database",
+                            "type": "LinkedServiceReference"
+                        }
+                    },
+                    {
+                        "name": "Save result pass",
+                        "type": "SqlServerStoredProcedure",
+                        "dependsOn": [
+                            {
+                                "activity": "koto_data_request",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.00:10:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "storedProcedureName": "[[dbo].[sp_save_koto_loading_log]",
+                            "storedProcedureParameters": {
+                                "error": {
+                                    "value": {
+                                        "value": "@bool(0)",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Boolean"
+                                },
+                                "message": {
+                                    "value": {
+                                        "value": "@string(activity('koto_data_request').output)",
+                                        "type": "Expression"
+                                    },
+                                    "type": "String"
+                                },
+                                "rowsCopied": {
+                                    "value": {
+                                        "value": "@activity('koto_data_request').output.rowsCopied",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Int32"
+                                },
+                                "rowsRead": {
+                                    "value": {
+                                        "value": "@activity('koto_data_request').output.rowsRead",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Int32"
+                                },
+                                "config_id": {
+                                    "value": {
+                                        "value": "@pipeline().parameters.config_id",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Int64"
+                                },
+                                "timestamp": {
+                                    "value": {
+                                        "value": "@utcnow()",
+                                        "type": "Expression"
+                                    },
+                                    "type": "DateTime"
+                                }
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "koto_database",
+                            "type": "LinkedServiceReference"
+                        }
+                    },
+                    {
+                        "name": "Save result failed 2",
+                        "type": "SqlServerStoredProcedure",
+                        "dependsOn": [
+                            {
+                                "activity": "Save result failed",
+                                "dependencyConditions": [
+                                    "Failed"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "0.00:10:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "storedProcedureName": "[[dbo].[sp_save_koto_loading_log]",
+                            "storedProcedureParameters": {
+                                "error": {
+                                    "value": {
+                                        "value": "@bool(1)",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Boolean"
+                                },
+                                "message": {
+                                    "value": {
+                                        "value": "@activity('koto_data_request').Error.Message",
+                                        "type": "Expression"
+                                    },
+                                    "type": "String"
+                                },
+                                "rowsCopied": {
+                                    "value": null,
+                                    "type": "Int32"
+                                },
+                                "rowsRead": {
+                                    "value": null,
+                                    "type": "Int32"
+                                },
+                                "config_id": {
+                                    "value": {
+                                        "value": "@pipeline().parameters.config_id",
+                                        "type": "Expression"
+                                    },
+                                    "type": "Int64"
+                                },
+                                "timestamp": {
+                                    "value": {
+                                        "value": "@utcnow()",
+                                        "type": "Expression"
+                                    },
+                                    "type": "DateTime"
+                                }
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "koto_database",
+                            "type": "LinkedServiceReference"
+                        }
+                    }
+                ],
+                "policy": {
+                    "elapsedTimeMetric": {},
+                    "cancelAfter": {}
+                },
+                "parameters": {
+                    "destination_table_name": {
+                        "type": "string"
+                    },
+                    "destination_schema_name": {
+                        "type": "string"
+                    },
+                    "relative_URL": {
+                        "type": "string"
+                    },
+                    "request_body": {
+                        "type": "string"
+                    },
+                    "drop_table": {
+                        "type": "bool"
+                    },
+                    "config_id": {
+                        "type": "int"
+                    }
+                },
+                "folder": {
+                    "name": "KOTO"
+                },
+                "annotations": [],
+                "lastPublishTime": "2021-10-28T21:55:59Z"
+            },
+            "dependsOn": [
+                "[concat(variables('factoryId'), '/datasets/koto_httpsource')]",
+                "[concat(variables('factoryId'), '/datasets/koto_SQL_server_table')]",
+                "[concat(variables('factoryId'), '/linkedServices/koto_database')]"
+            ]
+        }
+    ]
+}

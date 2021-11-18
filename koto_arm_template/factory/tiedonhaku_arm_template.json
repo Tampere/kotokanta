@@ -1,0 +1,45 @@
+{
+    "$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "factoryName": {
+            "type": "string",
+            "metadata": "Data Factory name",
+            "defaultValue": "koto_datafactory_name"
+        },
+        "dataFactory_location": {
+            "type": "string",
+            "defaultValue": "westeurope"
+        },
+        "dataFactory_identity_type": {
+            "type": "string",
+            "defaultValue": "SystemAssigned"
+        },
+        "dataFactory_identity_principalId": {
+            "type": "string",
+            "defaultValue": ""
+        },
+        "dataFactory_identity_tenantId": {
+            "type": "string",
+            "defaultValue": ""
+        }
+    },
+    "variables": {
+        "factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+    },
+    "resources": [
+        {
+            "name": "[parameters('factoryName')]",
+            "type": "Microsoft.DataFactory/factories",
+            "apiVersion": "2018-06-01",
+            "properties": {},
+            "dependsOn": [],
+            "location": "[parameters('dataFactory_location')]",
+            "identity": {
+                "type": "[parameters('dataFactory_identity_type')]",
+                "principalId": "[parameters('dataFactory_identity_principalId')]",
+                "tenantId": "[parameters('dataFactory_identity_tenantId')]"
+            }
+        }
+    ]
+}
